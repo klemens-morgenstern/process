@@ -114,7 +114,6 @@ struct process_handle
 
         if (ret == -1)
             throw_last_error("waitpid() failed", pid);
-
         exit_code = status;
     }
 

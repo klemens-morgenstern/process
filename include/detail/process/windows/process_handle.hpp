@@ -4,6 +4,7 @@
 #include <asio/windows/object_handle.hpp>
 #include <optional>
 
+
 namespace PROCESS_NAMESPACE::detail::process::windows {
 
 typedef int pid_t;
@@ -73,17 +74,27 @@ struct process_handle
 
     inline bool is_running(int & exit_code) const
     {
+        if (proc_info.hProcess == INVALID_HANDLE_VALUE)
+            return false;
+
         DWORD code;
+
         //single value, not needed in the winapi.
         if (!GetExitCodeProcess(proc_info.hProcess, &code))
             throw_last_error("GetExitCodeProcess() failed ", proc_info.dwProcessId);
 
-        return code == still_active;
+        if (code == still_active)
+            return true;
+        exit_code = code;
+        return true;
     }
 
 
-    void terminate_if_running()
+    void terminate_if_running() const
     {
+        if (proc_info.hProcess == INVALID_HANDLE_VALUE)
+            return;
+
         DWORD code;
         if (!GetExitCodeProcess(proc_info.hProcess, &code))
             return;

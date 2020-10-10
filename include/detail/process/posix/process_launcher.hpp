@@ -4,7 +4,6 @@
 #include <detail/process.hpp>
 #include <functional>
 
-
 namespace PROCESS_NAMESPACE::detail::process::posix {
 
 template<typename Init, typename Launcher = default_process_launcher>
@@ -129,29 +128,42 @@ protected:
     }
 
 public:
-        void set_error(const std::error_code & ec, const char* msg = "Unknown Error.")
+    void set_error(const std::error_code & ec, const char* msg = "Unknown Error.")
     {
         _ec = ec;
         _error_msg = msg;
     }
 
-    template<typename Args, typename ... Inits>
-    auto launch(std::filesystem::path exe, Args && args_in, Inits && ... inits) -> PROCESS_NAMESPACE::process
+    template<typename Args>
+    auto prepare_args(const std::filesystem::path &exe, Args && args)
     {
-        {
-            struct pipe_guard
-            {
-                int p[2];
-                pipe_guard() : p{-1,-1} {}
+        std::vector<char*> vec{args.size() + 2, nullptr};
+        vec[0] = const_cast<char*>(exe.c_str());
+        std::transform(std::begin(args), std::end(args), vec.begin() + 1, [](std::string_view sv){return const_cast<char*>(sv.data());});
+        return vec;
+    }
 
-                ~pipe_guard()
-                {
-                    if (p[0] != -1)
-                        ::close(p[0]);
-                    if (p[1] != -1)
-                        ::close(p[1]);
-                }
-            } p{};
+    template<typename Args, typename ... Inits>
+    auto launch(const std::filesystem::path &exe, Args && args, Inits && ... inits) -> PROCESS_NAMESPACE::process
+    {
+        //arg store
+        auto arg_store = prepare_args(exe, std::forward<Args>(args));
+        cmd_line = arg_store.data();
+        struct pipe_guard
+        {
+            int p[2];
+            pipe_guard() : p{-1,-1} {}
+
+            ~pipe_guard()
+            {
+                if (p[0] != -1)
+                    ::close(p[0]);
+                if (p[1] != -1)
+                    ::close(p[1]);
+            }
+        };
+        {
+            pipe_guard p;
 
             if (::pipe(p.p) == -1)
                 set_error(get_last_error(), "pipe(2) failed");
@@ -159,34 +171,31 @@ public:
                 set_error(get_last_error(), "fcntl(2) failed");//this might throw, so we need to be sure our pipe is safe.
 
             if (!_ec)
-                std::invoke([this](auto & init){on_setup(*this);}, inits...);
+                (on_setup(inits),...);
 
             if (_ec)
             {
-                std::invoke([this](auto & init){on_error(init);}, inits...);
+                (on_error(inits),...);
                 throw process_error(_ec, _error_msg, exe);
             }
 
-            this->pid = ::fork();
+            pid = ::fork();
             if (pid == -1)
             {
                 set_error(get_last_error(), "fork() failed");
-                std::invoke([this](auto & init){on_error(init);}, inits...);
-                std::invoke([this](auto & init){on_fork_error(init);}, inits...);
+                (on_error(inits),...);
+                (on_fork_error(inits),...);
                 throw process_error(_ec, _error_msg, exe);
             }
             else if (pid == 0)
             {
                 ::close(p.p[0]);
-                std::invoke([this](auto & init){on_exec_setup(init);}, inits...);
+                (on_exec_setup(inits),...);
 
                 ::execve(exe.c_str(), cmd_line, env);
-                _ec = get_last_error();
-                _error_msg = "execve failed";
-                std::invoke([this](auto & init){on_exec_error(init);}, inits...);
+                set_error(get_last_error(), "execve failed");
 
-
-                _write_error(p.p[1]);
+                _write_error(p.p[1], _error_msg);
                 ::close(p.p[1]);
 
                 _exit(EXIT_FAILURE);
@@ -200,15 +209,15 @@ public:
         }
         if (_ec)
         {
-            std::invoke([this](auto & init){on_error(init);}, inits...);
+            (on_error(inits),...);
             throw process_error(_ec, _error_msg, exe);
         }
         PROCESS_NAMESPACE::process proc{pid};
-        std::invoke([this](auto & init){on_success(init);}, inits...);
+        (on_success(inits),...);
 
         if (_ec)
         {
-            std::invoke([this](auto & init){on_error(init);}, inits...);
+            (on_error(inits),...);
             throw process_error(_ec, _error_msg, exe);
         }
 
@@ -217,7 +226,6 @@ public:
 
     const char * exe      = nullptr;
     char *const* cmd_line = nullptr;
-    bool cmd_style = false;
     char **env      = ::environ;
     pid_t pid = -1;
 };

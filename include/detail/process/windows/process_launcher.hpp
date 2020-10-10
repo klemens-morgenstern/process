@@ -2,69 +2,67 @@
 #define DETAIL_PROCESS_WINDOWS_PROCESS_LAUNCHER_HPP
 
 #include <detail/process.hpp>
+#include <functional>
 
 namespace PROCESS_NAMESPACE::detail::process::windows {
 
-
-inline void append_cmd_line(std::wstring &ws, std::wstring_view arg)
+inline std::wstring_view as_wstring(std::wstring_view in) {return in.data();}
+inline std::wstring as_wstring(std::string_view in)
 {
-    ws += arg;
-    ws += L'\0';
-}
-
-inline void append_cmd_line(std::wstring &ws, std::string_view arg)
-{
-    wchar_t dummy;
-    const auto req_size =
-            MultiByteToWideChar(
-                    CP_ACP, 0,
-                    arg.data(),
-                    arg.size(),
-                    &dummy, 0);
-
-    const auto current_size = ws.size();
-    ws.resize(current_size + req_size + 1);
-
-    MultiByteToWideChar(
-            CP_ACP, 0,
-            arg.data(),
-            arg.size(),
-            &ws[current_size], req_size);
-
-    ws.back() = L'\0';
-}
-
-
-inline void append_cmd_line(std::wstring &ws, std::u8string_view arg)
-{
-    wchar_t dummy;
-    const auto req_size =
-            MultiByteToWideChar(
-                    CP_UTF8, 0,
-                    reinterpret_cast<const char*>(arg.data()),
-                    arg.size(),
-                    &dummy, 0);
-
-    const auto current_size = ws.size();
-    ws.resize(current_size + req_size + 1);
-
-    MultiByteToWideChar(
-            CP_ACP, 0,
-            reinterpret_cast<const char*>(arg.data()),
-            arg.size(),
-            &ws[current_size], req_size);
-
-    ws.back() = L'\0';
+    return {in.begin(), in.end()};
 }
 
 template<typename Args>
-inline std::wstring build_cmd_line(Args && args) {
-    std::wstring cmd_line;
-    for (const auto & arg : args_in)
-        append_cmd_line(c, arg);
-    arg += L'\0';
-}
+inline std::wstring build_args(const std::filesystem::path & exe, Args && data)
+{
+    std::wstring st = exe;
 
+    //put in quotes if it has spaces or double quotes
+    if(!exe.empty())
+    {
+        auto it = st.find_first_of(L" \"");
+
+        if(it != st.npos)//contains spaces or double quotes.
+        {
+            // double existing quotes
+            for (auto p = st.find(L'"'); p != std::wstring::npos; p = st.find(L'"', p + 2))
+                st.replace(p, 1, L"\"\"");
+
+            // surround with quotes
+            st.insert(st.begin(), L'"');
+            st += L'"';
+        }
+    }
+
+    st += L' ';
+
+    for(auto & arg_ : data)
+    {
+        if(!arg_.empty())
+        {
+            auto warg = as_wstring(arg_);
+            auto it = warg.find_first_of(L" \"");//contains space or double quotes?
+            if(it != warg.npos) //yes
+            {
+                std::wstring arg{warg.data()};
+                // double existing quotes
+                for (auto p = arg.find(L'"'); p != decltype(arg)::npos; p = arg.find(L'"', p + 2))
+                    arg.replace(p, 1, L"\"\"");
+
+                // surround with quotes
+                arg.insert(arg.begin(), L'"');
+                arg += '"';
+            }
+            else
+                st += warg;
+        }
+
+        if (!st.empty())//first one does not need a preceeding space
+            st += L' ';
+
+    }
+    return st;
+}
 template<typename Init, typename Launcher = default_process_launcher>
 concept on_setup_init = requires(Init initializer, Launcher launcher) { {initializer.on_setup(launcher)}; };
 
@@ -110,24 +108,26 @@ public:
     template<typename Args, typename ... Inits>
     auto launch(std::filesystem::path exe, Args && args_in, Inits && ... inits) -> PROCESS_NAMESPACE::process
     {
-        cmd_line = build_cmd_line(args_in);
-        std::invoke([this](auto & init){on_setup(init);}, inits...);
+        cmd_line = build_args(exe, std::forward<Args>(args_in));
+
+        (on_setup(inits),...);
 
         if (_ec)
         {
-            std::invoke([this](auto & init){on_error(init);}, inits...);
+            (on_error(inits),...);
             throw process_error(_ec, _error_msg, exe);
         }
 
-        process proc{};
-        int launched_process = ::boost::winapi::create_process(
-                exe,                                        //       LPCSTR_ lpApplicationName,
-                cmd_line.data(),                            //       LPSTR_ lpCommandLine,
+        PROCESS_NAMESPACE::process proc{};
+
+        int launched_process = CreateProcessW(
+                exe.c_str(),                                //       LPCSTR_ lpApplicationName,
+                cmd_line.data(),               //       LPSTR_ lpCommandLine,
                 proc_attrs,                                 //       LPSECURITY_ATTRIBUTES_ lpProcessAttributes,
                 thread_attrs,                               //       LPSECURITY_ATTRIBUTES_ lpThreadAttributes,
                 inherit_handles,                            //       INT_ bInheritHandles,
                 this->creation_flags,                       //       DWORD_ dwCreationFlags,
-                reinterpret_cast<void*>(const_cast<Char*>(env)),  // LPVOID_ lpEnvironment,
+                reinterpret_cast<void*>(const_cast<wchar_t*>(env)),//LPVOID_ lpEnvironment,
                 work_dir,                                   //       LPCSTR_ lpCurrentDirectory,
                 &this->startup_info,                        //       LPSTARTUPINFOA_ lpStartupInfo,
                 &proc._process_handle.proc_info);           //       LPPROCESS_INFORMATION_ lpProcessInformation)
@@ -135,19 +135,19 @@ public:
         if (launched_process != 0)
         {
             _ec.clear();
-            std::invoke([this](auto & init){on_success(init);}, inits...);
+            (on_success(inits),...);
         }
         else
         {
             _ec = get_last_error();
-            _msg = "CreateProcess failed"
-            std::invoke([this](auto & init){on_error(init);}, inits...);
+            _error_msg = "CreateProcess failed";
+            (on_error(inits),...);
             throw process_error(_ec, _error_msg, exe);
         }
 
         if (_ec)
         {
-            std::invoke([this](auto & init){this.on_error(init);}, inits...);
+            (on_error(inits),...);
             throw process_error(_ec, _error_msg, exe);
         }
         return proc;
@@ -157,10 +157,22 @@ public:
     LPSECURITY_ATTRIBUTES thread_attrs = nullptr;
     BOOL inherit_handles = false;
     const wchar_t * work_dir = nullptr;
-    std::wstring cmd_line = nullptr;
+    std::wstring cmd_line;
     const wchar_t * exe      = nullptr;
     const wchar_t * env      = nullptr;
     PROCESS_INFORMATION proc_info{nullptr, nullptr, 0,0};
+
+    DWORD creation_flags = 0;
+
+    STARTUPINFOEXW startup_info_ex
+            {STARTUPINFOW {sizeof(STARTUPINFOW), nullptr, nullptr, nullptr,
+                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, nullptr,
+                             INVALID_HANDLE_VALUE,
+                             INVALID_HANDLE_VALUE,
+                             INVALID_HANDLE_VALUE},
+             nullptr
+            };
+    STARTUPINFOW &startup_info = startup_info_ex.StartupInfo;
 };
 
 }

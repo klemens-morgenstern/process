@@ -66,23 +66,63 @@ public:
 public:
     // Provides access to underlying operating system facilities
     using native_handle_type = detail::process::native_handle_type;
-    // Construct a child from a property list and launch it.
 
-    template<typename Args, typename... Inits>
-    explicit process(const std::filesystem::path& exe, Args&& args, Inits&&... inits) : process(exe, args, std::forward<Inits>(inits)..., default_process_launcher()) {}
+    // Construct a child from a property list and launch it.
+    template<detail::process_initializer<default_process_launcher>  ... Inits>
+    explicit process(const std::filesystem::path& exe, std::initializer_list<std::wstring_view> args, Inits&&... inits);
+
     // Construct a child from a property list and launch it with a custom process launcher
-    template<typename Args, typename... Inits, process_launcher Launcher>
+    template<process_launcher Launcher, detail::process_initializer<Launcher> ... Inits>
+    explicit process(const std::filesystem::path& exe,
+                     std::initializer_list<std::wstring_view> args,
+                     Inits&&... inits,
+                     Launcher&& launcher) : process(launcher.launch(exe, args, std::forward<Inits>(inits)...)) {}
+
+    // Construct a child from a property list and launch it.
+    template<detail::process_initializer<default_process_launcher>  ... Inits>
+    explicit process(const std::filesystem::path& exe, std::initializer_list<std::string_view> args, Inits&&... inits);
+
+    // Construct a child from a property list and launch it with a custom process launcher
+    template<process_launcher Launcher, detail::process_initializer<Launcher> ... Inits>
+    explicit process(const std::filesystem::path& exe,
+                     std::initializer_list<std::string_view> args,
+                     Inits&&... inits,
+                     Launcher&& launcher) : process(launcher.launch(exe, args, std::forward<Inits>(inits)...)) {}
+
+    // Construct a child from a property list and launch it.
+    template<typename Args, detail::process_initializer<default_process_launcher>  ... Inits>
+    explicit process(const std::filesystem::path& exe, Args&& args, Inits&&... inits);
+
+    // Construct a child from a property list and launch it with a custom process launcher
+    template<process_launcher Launcher, typename Args,
+             detail::process_initializer<Launcher> ... Inits>
     explicit process(const std::filesystem::path& exe,
                      Args&& args,
                      Inits&&... inits,
-                     Launcher&& launcher) : process(launcher(exe, args, std::forward<Inits>(inits)...)) {}
+                     Launcher&& launcher) : process(launcher.launch(exe, args, std::forward<Inits>(inits)...)) {}
+
     // Attach to an existing process
     explicit process(const pid_type& pid) : _process_handle{pid} {}
     // An empty process is similar to a default constructed thread. It holds an empty
     // handle and is a place holder for a process that is to be launched later.
     process() = default;
-    process(process&&) = default;
-    process& operator=(process&&) = default;
+
+    process(const process&) = delete;
+    process& operator=(const process&) = delete;
+
+    process(process&& lhs) : _attached(lhs._attached), _terminated(lhs._terminated), _exit_status{lhs._exit_status.load()}, _process_handle(std::move(lhs._process_handle))
+    {
+        lhs._attached = false;
+    }
+    process& operator=(process&& lhs)
+    {
+        _attached = lhs._attached;
+        _terminated = lhs._terminated;
+        _exit_status.store(lhs._exit_status.load());
+        _process_handle = std::move(lhs._process_handle);
+        lhs._attached = false;
+        return *this;
+    }
     // tbd behavior
     ~process() {
         if (_attached && !_terminated)
@@ -100,8 +140,9 @@ public:
     // the exit_code internally.
     bool running() const
     {
-        int status = 0;
+        int status = _exit_status.load();
         const auto res = _process_handle.is_running(status);
+
         _exit_status.store(status);
         return res;
     }
@@ -118,7 +159,7 @@ public:
     // Block until the process to exits
     void wait()
     {
-        int status;
+        int status = 0;
         _process_handle.wait(status);
         _exit_status.store(status);
     }
@@ -134,10 +175,30 @@ public:
     void cancel_async_wait() {
         _process_handle.cancel_async_wait();
     }
-
-
 };
 
 }
+
+#include <detail/process_launcher.hpp>
+
+namespace PROCESS_NAMESPACE {
+template<typename Args, detail::process_initializer<default_process_launcher>  ... Inits>
+process::process(const std::filesystem::path& exe, Args&& args, Inits&&... inits)
+    : process(default_process_launcher{}.launch(exe, args, std::forward<Inits>(inits)...)) {}
+
+// Construct a child from a property list and launch it.
+template<detail::process_initializer<default_process_launcher>  ... Inits>
+process::process(const std::filesystem::path& exe, std::initializer_list<std::string_view> args, Inits&&... inits)
+    : process(default_process_launcher{}.launch(exe, args, std::forward<Inits>(inits)...)) {}
+
+template<detail::process_initializer<default_process_launcher>  ... Inits>
+process::process(const std::filesystem::path& exe, std::initializer_list<std::wstring_view> args, Inits&&... inits)
+        : process(exe, args, std::forward<Inits>(inits)...) {}
+
+
+
+}
+
+
 
 #endif //PROCESS_HPP
