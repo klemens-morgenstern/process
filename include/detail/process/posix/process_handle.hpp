@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <asio/signal_set.hpp>
 
+
 namespace PROCESS_NAMESPACE::detail::process::posix {
 
 constexpr int still_active = 0x017f;
@@ -120,38 +121,42 @@ struct process_handle
     std::optional<asio::signal_set> sset;
 
     template<class Executor, class CompletionToken>
-    auto async_wait(Executor& ctx, CompletionToken&& token, std::atomic<int> & exit_code)
+    auto async_wait(Executor& ctx, CompletionToken && token, std::atomic<int> & exit_code)
     {
         sset.emplace(ctx, SIGCHLD);
 
-        asio::async_completion<CompletionToken, void(int, std::error_code)> comp{std::forward<CompletionToken>(token)};
-        int status;
-        check_status(std::move(comp.completion_handler), {}, exit_code);
-    }
+        asio::async_completion<CompletionToken, void(int, std::error_code)> comp{token};
+        _check_status(std::move(comp.completion_handler), {}, exit_code);
 
-    template<typename Handler>
-    void check_status(Handler && h, std::error_code ec, std::atomic<int> & exit_code)
-    {
-        if (ec)
-            h(ec, 0);
-        int status;
-        int ret = waitpid(pid, &status, WNOHANG);
-
-        if (ret != 0)
-        {
-            h(get_last_error());
-            sset = std::nullopt;
-        }
-        else if (!is_code_running(pid))
-        {
-            h(status, {});
-            sset = std::nullopt;
-        }
-        else
-            sset->async_wait([this, &exit_code, h = std::move(h)](std::error_code ec, int) mutable{check_status(std::move(h), ec, exit_code); });
+        return comp.result.get();
     }
 
     void cancel_async_wait() { if (sset) sset->cancel(); }
+
+private:
+    template<typename Handler>
+    void _check_status(Handler && h, std::error_code ec, std::atomic<int> & exit_code)
+    {
+        if (ec)
+            h(ec, 0);
+        int status{exit_code.load()};
+        int ret = waitpid(pid, &status, WNOHANG);
+
+        if (ret < 0)
+        {
+            h(get_last_error(), 0);
+            sset = std::nullopt;
+        }
+        else if (ret == pid && !is_code_running(status))
+        {
+            exit_code = status;
+            h({}, eval_exit_status(status));
+            sset = std::nullopt;
+        }
+        else
+            sset->async_wait([this, &exit_code, h = std::move(h)](std::error_code ec, int) mutable { _check_status(std::move(h), ec, exit_code); });
+    }
+
 
 };
 

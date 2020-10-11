@@ -77,6 +77,7 @@ struct process_handle
         if (proc_info.hProcess == INVALID_HANDLE_VALUE)
             return false;
 
+
         DWORD code;
 
         //single value, not needed in the winapi.
@@ -146,6 +147,8 @@ struct process_handle
                     h(get_last_error(), 0);
                 else
                 {
+                    CloseHandle(proc_info.hProcess);
+                    proc_info.hProcess = INVALID_HANDLE_VALUE;
                     exit_code.store(code);
                     h({}, static_cast<int>(code));
                 }
