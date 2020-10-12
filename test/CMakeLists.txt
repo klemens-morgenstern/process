@@ -4,7 +4,7 @@ add_executable(target_process target_process.cpp)
 
 enable_testing()
 
-add_executable(process_test test_runner.cpp wait_exit.cpp)
+add_executable(process_test test_runner.cpp wait_exit.cpp group.cpp)
 add_dependencies(process_test target_process)
 
 if (UNIX)

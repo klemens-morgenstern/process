@@ -6,7 +6,6 @@
 #include <unistd.h>
 #include <asio/signal_set.hpp>
 
-
 namespace PROCESS_NAMESPACE::detail::process::posix {
 
 constexpr int still_active = 0x017f;

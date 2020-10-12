@@ -19,7 +19,7 @@ template<typename Init, typename Launcher = default_process_launcher>
 concept on_fork_error_init = requires(Init initializer, Launcher launcher) { {initializer.on_fork_error(launcher, std::error_code())}; };
 
 template<typename Init, typename Launcher = default_process_launcher>
-concept on_exec_setup_init = requires(Init initializer, Launcher launcher) { {initializer.on_exec_setup(launcher, std::error_code())}; };
+concept on_exec_setup_init = requires(Init initializer, Launcher launcher) { {initializer.on_exec_setup(launcher)}; };
 
 template<typename Init, typename Launcher = default_process_launcher>
 concept on_exec_error_init = requires(Init initializer, Launcher launcher) { {initializer.on_exec_error(launcher, std::error_code())}; };
@@ -33,40 +33,40 @@ protected:
     const char * _error_msg = nullptr;
 
     template<typename Initializer>
-    void on_setup(Initializer &&initializer) {}
+    void _on_setup(Initializer &&initializer) {}
 
     template<typename Initializer> requires on_setup_init<Initializer>
-    void on_setup(Initializer &&init) { init.on_setup(*this); }
+    void _on_setup(Initializer &&init) { init.on_setup(*this); }
 
     template<typename Initializer>
-    void on_error(Initializer &&initializer) {}
+    void _on_error(Initializer &&initializer) {}
 
     template<typename Initializer> requires on_error_init<Initializer>
-    void on_error(Initializer &&init) { init.on_error(*this, _ec); }
+    void _on_error(Initializer &&init) { init.on_error(*this, _ec); }
 
     template<typename Initializer>
-    void on_success(Initializer &&initializer) {}
+    void _on_success(Initializer &&initializer) {}
 
     template<typename Initializer> requires on_success_init<Initializer>
-    void on_success(Initializer &&init) { init.on_success(*this); }
+    void _on_success(Initializer &&init) { init.on_success(*this); }
 
     template<typename Initializer>
-    void on_fork_error(Initializer &&initializer) {}
+    void _on_fork_error(Initializer &&initializer) {}
 
     template<typename Initializer> requires on_fork_error_init<Initializer>
-    void on_fork_error(Initializer &&init) { init.on_success(*this); }
+    void _on_fork_error(Initializer &&init) { init.on_success(*this); }
 
     template<typename Initializer>
-    void on_exec_setup(Initializer &&initializer) {}
+    void _on_exec_setup(Initializer &&initializer) {}
 
     template<typename Initializer> requires on_exec_setup_init<Initializer>
-    void on_exec_setup(Initializer &&init) { init.on_exec_setup(*this); }
+    void _on_exec_setup(Initializer &&init) { init.on_exec_setup(*this); }
 
     template<typename Initializer>
-    void on_exec_error(Initializer &&initializer) {}
+    void _on_exec_error(Initializer &&initializer) {}
 
     template<typename Initializer> requires on_exec_error_init<Initializer>
-    void on_exec_error(Initializer &&init) { init.on_exec_error(*this, _ec); }
+    void _on_exec_error(Initializer &&init) { init.on_exec_error(*this, _ec); }
 
 
     void _write_error(int sink, const std::string & msg)
@@ -171,11 +171,11 @@ public:
                 set_error(get_last_error(), "fcntl(2) failed");//this might throw, so we need to be sure our pipe is safe.
 
             if (!_ec)
-                (on_setup(inits),...);
+                (_on_setup(inits),...);
 
             if (_ec)
             {
-                (on_error(inits),...);
+                (_on_error(inits),...);
                 throw process_error(_ec, _error_msg, exe);
             }
 
@@ -183,14 +183,14 @@ public:
             if (pid == -1)
             {
                 set_error(get_last_error(), "fork() failed");
-                (on_error(inits),...);
-                (on_fork_error(inits),...);
+                (_on_error(inits),...);
+                (_on_fork_error(inits),...);
                 throw process_error(_ec, _error_msg, exe);
             }
             else if (pid == 0)
             {
                 ::close(p.p[0]);
-                (on_exec_setup(inits),...);
+                (_on_exec_setup(inits),...);
 
                 ::execve(exe.c_str(), cmd_line, env);
                 set_error(get_last_error(), "execve failed");
@@ -209,15 +209,15 @@ public:
         }
         if (_ec)
         {
-            (on_error(inits),...);
+            (_on_error(inits),...);
             throw process_error(_ec, _error_msg, exe);
         }
         PROCESS_NAMESPACE::process proc{pid};
-        (on_success(inits),...);
+        (_on_success(inits),...);
 
         if (_ec)
         {
-            (on_error(inits),...);
+            (_on_error(inits),...);
             throw process_error(_ec, _error_msg, exe);
         }
 

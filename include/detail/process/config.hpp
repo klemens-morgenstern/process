@@ -44,7 +44,7 @@ inline std::error_code get_last_error() noexcept
     return std::error_code(GetLastError(), std::system_category());
 }
 
-typedef int pid_type;
+typedef DWORD pid_type;
 typedef HANDLE native_handle_type;
 #endif
 

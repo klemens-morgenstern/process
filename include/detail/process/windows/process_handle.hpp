@@ -20,7 +20,7 @@ struct process_handle
                                   proc_info(pi)
     {}
 
-    explicit process_handle(pid_t pid) :
+    explicit process_handle(DWORD pid) :
                                   proc_info{nullptr, nullptr, 0,0}
     {
         auto h = ::OpenProcess(

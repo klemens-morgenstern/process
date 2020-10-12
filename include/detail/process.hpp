@@ -36,7 +36,7 @@ concept process_initializer =
 
 }
 
-template<typename Launcher, typename Args = std::vector<std::string>, typename ...Initializers>
+template<typename Launcher, typename Args = std::initializer_list<std::string_view>, typename ...Initializers>
 concept process_launcher =
     (
        std::convertible_to<std::iter_value_t<std::ranges::iterator_t<Args>>, std::string_view> ||

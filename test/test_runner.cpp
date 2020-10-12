@@ -28,6 +28,13 @@ int main(int argc, const char** argv)
     }
 
     doctest::Context context(argc - 2, argv);
-    return context.run(); // run
+    try {
+        return context.run(); // run
+    }
+    catch (std::exception & ec)
+    {
+        std::cerr << "Exception thrown: " << ec.what() << std::endl;
+    }
+    return 1;
 }
 

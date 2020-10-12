@@ -81,24 +81,25 @@ protected:
     const char * _error_msg = nullptr;
 
     template<typename Initializer>
-    void on_setup(Initializer &&initializer) {}
+    void _on_setup(Initializer &&init) {}
 
     template<typename Initializer> requires on_setup_init<Initializer>
-    void on_setup(Initializer &&initializer) { init.on_setup(*this); }
+    void _on_setup(Initializer &&init) { init.on_setup(*this); }
 
     template<typename Initializer>
-    void on_error(Initializer &&init) {}
+    void _on_error(Initializer &&init) {}
 
     template<typename Initializer> requires on_error_init<Initializer>
-    void on_error(Initializer &&init) { init.on_error(*this, _ec); }
+    void _on_error(Initializer &&init) { init.on_error(*this, _ec); }
 
     template<typename Initializer>
-    void on_success(Initializer &&initializer) {}
+    void _on_success(Initializer &&init) {}
 
     template<typename Initializer> requires on_success_init<Initializer>
-    void on_success(Initializer &&init) { init.on_success(*this); }
+    void _on_success(Initializer &&init) { init.on_success(*this); }
 
 public:
+
     void set_error(const std::error_code & ec, const char* msg = "Unknown Error.")
     {
         _ec = ec;
@@ -110,11 +111,11 @@ public:
     {
         cmd_line = build_args(exe, std::forward<Args>(args_in));
 
-        (on_setup(inits),...);
+        (_on_setup(inits),...);
 
         if (_ec)
         {
-            (on_error(inits),...);
+            (_on_error(inits),...);
             throw process_error(_ec, _error_msg, exe);
         }
 
@@ -122,7 +123,7 @@ public:
 
         int launched_process = CreateProcessW(
                 exe.c_str(),                                //       LPCSTR_ lpApplicationName,
-                cmd_line.data(),               //       LPSTR_ lpCommandLine,
+                cmd_line.data(),                            //       LPSTR_ lpCommandLine,
                 proc_attrs,                                 //       LPSECURITY_ATTRIBUTES_ lpProcessAttributes,
                 thread_attrs,                               //       LPSECURITY_ATTRIBUTES_ lpThreadAttributes,
                 inherit_handles,                            //       INT_ bInheritHandles,
@@ -130,24 +131,26 @@ public:
                 reinterpret_cast<void*>(const_cast<wchar_t*>(env)),//LPVOID_ lpEnvironment,
                 work_dir,                                   //       LPCSTR_ lpCurrentDirectory,
                 &this->startup_info,                        //       LPSTARTUPINFOA_ lpStartupInfo,
-                &proc._process_handle.proc_info);           //       LPPROCESS_INFORMATION_ lpProcessInformation)
+                &this->proc_info);                          //       LPPROCESS_INFORMATION_ lpProcessInformation)
+
+        proc._process_handle.proc_info = this->proc_info;
 
         if (launched_process != 0)
         {
             _ec.clear();
-            (on_success(inits),...);
+            (_on_success(inits),...);
         }
         else
         {
             _ec = get_last_error();
             _error_msg = "CreateProcess failed";
-            (on_error(inits),...);
+            (_on_error(inits),...);
             throw process_error(_ec, _error_msg, exe);
         }
 
         if (_ec)
         {
-            (on_error(inits),...);
+            (_on_error(inits),...);
             throw process_error(_ec, _error_msg, exe);
         }
         return proc;
