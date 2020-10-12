@@ -128,15 +128,15 @@ struct process_group_handle
             throw_last_error("waitpid failed");
     }
 
-    pid_type wait_one()
+    std::pair<pid_type, int> wait_one()
     {
         pid_t ret;
-        siginfo_t  status;
+        int  status;
 
-        ret = ::waitpid(-grp, &status.si_status, 0);
+        ret = ::waitpid(-grp, &status, 0);
         if (ret == -1)
             throw_last_error("waitpid failed");
-        return ret;
+        return {ret, WEXITSTATUS(status)};
     }
 };
 

@@ -88,7 +88,7 @@ public:
     void terminate() { _group.terminate(); }
 
     void wait()         { _group.wait(); }
-    pid_type wait_one() { return _group.wait_one(); }
+    std::pair<pid_type, int> wait_one() { return _group.wait_one(); }
 };
 
 }

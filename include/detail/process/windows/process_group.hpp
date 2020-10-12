@@ -226,7 +226,7 @@ public:
         }
     }
 
-    pid_type wait_one()
+    std::pair<pid_type, int>  wait_one()
     {
         DWORD completion_code;
         ULONG_PTR completion_key;
@@ -237,10 +237,17 @@ public:
                 &completion_key, &overlapped, INFINITE))
         {
             if (reinterpret_cast<HANDLE>(completion_key) == _job_object && completion_code == JOB_OBJECT_MSG_EXIT_PROCESS)
-                return static_cast<pid_type>(reinterpret_cast<ULONG_PTR>(overlapped));
+            {
+                auto pid = static_cast<pid_type>(reinterpret_cast<ULONG_PTR>(overlapped));
+                DWORD code;
+                if (!GetExitCodeProcess(get_process_handle(pid), &code))
+                    throw_last_error("GetExitCodeProcess() failed");
+                return {pid, static_cast<int>(code)};
+            }
+
         }
         throw_last_error("GetQueuedCompletionStatus failed");
-        return -1;
+        return {-1, -1};
     }
 };
 
