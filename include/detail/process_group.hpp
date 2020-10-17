@@ -89,6 +89,23 @@ public:
 
     void wait()         { _group.wait(); }
     std::pair<pid_type, int> wait_one() { return _group.wait_one(); }
+
+    template<class Executor, class CompletionToken>
+    auto async_wait(Executor& ctx, CompletionToken&& token)
+    {
+        return _group.async_wait(ctx, std::forward<CompletionToken>(token));
+    }
+
+    template<class Executor, class CompletionToken>
+    auto async_wait_one(Executor& ctx, CompletionToken&& token)
+    {
+        return _group.async_wait_one(ctx, std::forward<CompletionToken>(token));
+    }
+
+    void cancel_async_wait() {
+        _group.cancel_async_wait();
+    }
+
 };
 
 }

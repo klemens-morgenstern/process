@@ -249,6 +249,32 @@ public:
         throw_last_error("GetQueuedCompletionStatus failed");
         return {-1, -1};
     }
+
+    std::optional<asio::detail::win_iocp_io_context> wiic;
+
+    template<class Executor, class CompletionToken>
+    auto async_wait(Executor& ctx, CompletionToken&& token)
+    {
+        wiic.emplace(ctx);
+
+        asio::async_completion<CompletionToken, void(std::error_code)> comp{token};
+        _check_status(std::move(comp.completion_handler), {});
+
+        return comp.result.get();
+    }
+
+    template<class Executor, class CompletionToken>
+    auto async_wait_one(Executor& ctx, CompletionToken&& token)
+    {
+        wiic.emplace(ctx);
+
+        asio::async_completion<CompletionToken, void(std::error_code, pid_type, int)> comp{token};
+        _check_status_one(std::move(comp.completion_handler), {});
+
+        return comp.result.get();
+    }
+
+    void cancel_async_wait() { if (wiic) wiic->cancel(); }
 };
 
 group_ref::group_ref(process_group_handle &g) : handle(g.native_handle())

@@ -124,7 +124,7 @@ struct process_handle
     {
         sset.emplace(ctx, SIGCHLD);
 
-        asio::async_completion<CompletionToken, void(int, std::error_code)> comp{token};
+        asio::async_completion<CompletionToken, void(std::error_code, int)> comp{token};
         _check_status(std::move(comp.completion_handler), {}, exit_code);
 
         return comp.result.get();

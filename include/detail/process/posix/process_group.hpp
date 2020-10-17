@@ -5,7 +5,7 @@
 #include <detail/process/exception.hpp>
 #include <detail/process/config.hpp>
 #include <process.hpp>
-
+#include <iostream>
 
 namespace PROCESS_NAMESPACE::detail::process::posix
 {
@@ -138,6 +138,84 @@ struct process_group_handle
             throw_last_error("waitpid failed");
         return {ret, WEXITSTATUS(status)};
     }
+
+    std::optional<asio::signal_set> sset;
+
+    template<class Executor, class CompletionToken>
+    auto async_wait(Executor& ctx, CompletionToken&& token)
+    {
+        sset.emplace(ctx, SIGCHLD);
+
+        asio::async_completion<CompletionToken, void(std::error_code)> comp{token};
+        _check_status(std::move(comp.completion_handler), {});
+
+        return comp.result.get();
+    }
+
+    template<class Executor, class CompletionToken>
+    auto async_wait_one(Executor& ctx, CompletionToken&& token)
+    {
+        sset.emplace(ctx, SIGCHLD);
+
+        asio::async_completion<CompletionToken, void(std::error_code, pid_type, int)> comp{token};
+        _check_status_one(std::move(comp.completion_handler), {});
+
+        return comp.result.get();    }
+
+    void cancel_async_wait() { if (sset) sset->cancel(); }
+private:
+    template<typename Handler>
+    void _check_status(Handler && h, std::error_code ec)
+    {
+        if (ec)
+            h(ec);
+
+        siginfo_t  status;
+        int ret = ::waitpid(-grp, &status.si_status, 0);
+        if (ret == -1)
+        {
+            h(get_last_error());
+            return;
+        }
+
+        ret = ::waitid(P_PGID, grp, &status, WEXITED | WNOHANG);
+
+        if ((ret < 0) && (errno != ECHILD))
+        {
+            h(get_last_error());
+            sset = std::nullopt;
+        }
+        else
+        {
+            if (errno != ECHILD)
+                sset->async_wait([this, h = std::move(h)](std::error_code ec, int) mutable { _check_status(std::move(h), ec); });
+            else
+                h({});
+        }
+    }
+
+    template<typename Handler>
+    void _check_status_one(Handler && h, std::error_code ec)
+    {
+        if (ec)
+            h(ec, 0, 0);
+
+        int status;
+        pid_t ret = waitpid(-grp, &status, WNOHANG);
+        if (ret < 0)
+        {
+            sset = std::nullopt;
+            h(get_last_error(), 0, 0);
+        }
+        else if ((ret > 0) && !is_code_running(status))
+        {
+            sset = std::nullopt;
+            h({}, ret, eval_exit_status(status));
+        }
+        else
+            sset->async_wait([this, h = std::move(h)](std::error_code ec, int) mutable { _check_status_one(std::move(h), ec ); });
+    }
+
 };
 
 }
