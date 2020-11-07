@@ -27,7 +27,7 @@ class process;
 
 namespace detail {
 
-template<typename Launcher, typename Init>
+template<typename Init, typename Launcher>
 concept process_initializer =
    (  requires(Init initializer, Launcher launcher) { {initializer.on_setup(launcher)}; }
    || requires(Init initializer, Launcher launcher) { {initializer.on_success(launcher)}; }
@@ -50,6 +50,16 @@ concept process_launcher =
         &&  (detail::process_initializer<Launcher, Initializers> &&  ...);
 
 class default_process_launcher;
+
+template<typename Init, typename Launcher>
+concept process_initializer =
+    process_launcher<Launcher> &&
+   (  requires(Init initializer, Launcher launcher) { {initializer.on_setup(launcher)}; }
+   || requires(Init initializer, Launcher launcher) { {initializer.on_success(launcher)}; }
+   || requires(Init initializer, Launcher launcher) { {initializer.on_error(launcher, std::error_code())}; }
+);
+
+
 
 namespace detail {
 template<typename T> using same = T;

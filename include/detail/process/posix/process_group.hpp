@@ -10,33 +10,6 @@
 namespace PROCESS_NAMESPACE::detail::process::posix
 {
 
-struct process_group_handle;
-
-struct group_ref
-{
-    process_group_handle & grp;
-
-    explicit inline group_ref(process_group_handle &g) : grp(g) {}
-
-    template <class Executor>
-    void on_exec_setup(Executor&) const
-    {
-        if (grp.grp == -1)
-            ::setpgid(0, 0);
-        else
-            ::setpgid(0, grp.grp);
-    }
-
-    template <class Executor>
-    void on_success(Executor& exec) const
-    {
-        if (grp.grp == -1)
-            grp.grp = exec.pid;
-
-    }
-};
-
-
 struct process_group_handle
 {
     pid_t grp = -1;
@@ -74,26 +47,15 @@ struct process_group_handle
 
     template<typename Args,
             detail::process_initializer<default_process_launcher> ... Inits>
-    pid_type emplace(const std::filesystem::path& exe,
+    inline pid_type emplace(const std::filesystem::path& exe,
                      Args&& args,
-                     Inits&&... inits)
-    {
-        auto proc = default_process_launcher{}.launch(exe, args, std::forward<Inits>(inits)..., group_ref{*this});
-        proc.detach();
-        return proc.id();
-    }
-
+                     Inits&&... inits);
     template<process_launcher Launcher, typename Args,
             detail::process_initializer<Launcher> ... Inits>
-    pid_type emplace(const std::filesystem::path& exe,
+    inline pid_type emplace(const std::filesystem::path& exe,
                      Args&& args,
                      Inits&&... inits,
-                     Launcher&& launcher)
-    {
-        auto proc = launcher.launch(exe, args, std::forward<Inits>(inits)..., group_ref{*this});
-        proc.detach();
-        return proc.id();
-    }
+                     Launcher&& launcher);
 
 
     bool contains(pid_type proc)
@@ -139,6 +101,55 @@ struct process_group_handle
         return {ret, WEXITSTATUS(status)};
     }
 };
+
+struct group_ref
+{
+    process_group_handle & grp;
+
+    explicit inline group_ref(process_group_handle &g) : grp(g) {}
+
+    template <class Executor>
+    void on_exec_setup(Executor&) const
+    {
+        if (grp.grp == -1)
+            ::setpgid(0, 0);
+        else
+            ::setpgid(0, grp.grp);
+    }
+
+    template <class Executor>
+    void on_success(Executor& exec) const
+    {
+        if (grp.grp == -1)
+            grp.grp = exec.pid;
+
+    }
+};
+
+
+template<typename Args,
+        detail::process_initializer<default_process_launcher> ... Inits>
+pid_type process_group_handle::emplace(const std::filesystem::path& exe,
+                 Args&& args,
+                 Inits&&... inits)
+{
+    auto proc = default_process_launcher{}.launch(exe, args, std::forward<Inits>(inits)..., group_ref{*this});
+    proc.detach();
+    return proc.id();
+}
+
+template<process_launcher Launcher, typename Args,
+        detail::process_initializer<Launcher> ... Inits>
+pid_type process_group_handle::emplace(const std::filesystem::path& exe,
+                 Args&& args,
+                 Inits&&... inits,
+                 Launcher&& launcher)
+{
+    auto proc = launcher.launch(exe, args, std::forward<Inits>(inits)..., group_ref{*this});
+    proc.detach();
+    return proc.id();
+}
+
 
 }
 
