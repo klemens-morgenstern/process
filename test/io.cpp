@@ -20,11 +20,13 @@ struct deleter
 
 TEST_CASE("stdout_path")
 {
-    const auto tmp = std::filesystem::temp_directory_path() / "std_process_tmp_file";
+    auto tmp = std::filesystem::temp_directory_path() / "std_process_tmp_file";
     deleter d{tmp};
 
     proc::process p (target_path, {"--out", "test string file"}, proc::process_io{.out = tmp});
+
     p.wait();
+
     REQUIRE(p.exit_code() == 0);
 
     std::ifstream ifs{tmp};
@@ -42,6 +44,7 @@ TEST_CASE("stderr_path")
     deleter d{tmp};
 
     proc::process p (target_path, {"--err", "test string file error"}, proc::process_io{.err = tmp});
+
     p.wait();
     REQUIRE(p.exit_code() == 0);
 
@@ -61,7 +64,9 @@ TEST_CASE("stderr_path")
     deleter d_in{tmp_in};
 
     std::ofstream{tmp_in} << "some message sent to the the stream" << std::endl;
+
     proc::process p (target_path, {"--in"}, proc::process_io{.in = tmp_in, .out = tmp});
+
     p.wait();
     REQUIRE(p.exit_code() == 0);
 
